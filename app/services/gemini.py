@@ -25,7 +25,7 @@ async def chat(phone: str, user_message: str, lead_name: str = "") -> str:
     history = await get_chat_history(phone)
 
     model = genai.GenerativeModel(
-        model_name="gemini-2.0-flash",
+        model_name="gemini-2.5-flash",
         system_instruction=SYSTEM_PROMPT,
     )
 
@@ -42,7 +42,7 @@ async def chat(phone: str, user_message: str, lead_name: str = "") -> str:
 
 async def transcribe_audio(audio_bytes: bytes) -> str:
     _ensure_configured()
-    model = genai.GenerativeModel("gemini-2.0-flash")
+    model = genai.GenerativeModel("gemini-2.5-flash")
 
     audio_part = {
         "mime_type": "audio/ogg",
@@ -56,7 +56,7 @@ async def transcribe_audio(audio_bytes: bytes) -> str:
 
 async def analyze_image(image_bytes: bytes) -> str:
     _ensure_configured()
-    model = genai.GenerativeModel("gemini-2.0-flash")
+    model = genai.GenerativeModel("gemini-2.5-flash")
 
     image_part = {
         "mime_type": "image/jpeg",

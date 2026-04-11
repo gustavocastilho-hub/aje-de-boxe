@@ -13,24 +13,26 @@ async def get_redis() -> redis.Redis:
     return _pool
 
 
+def _base_key(phone: str) -> str:
+    return f"{phone}--aje"
+
+
 # --------------- bloqueio de agente ---------------
 
-async def set_block(chat_id: str, ttl: int = settings.BLOCK_TTL_SECONDS) -> None:
+async def set_block(phone: str, ttl: int = settings.BLOCK_TTL_SECONDS) -> None:
     r = await get_redis()
-    key = f"BloquearAgente-{chat_id}--{settings.UAZAPI_INSTANCE}"
-    await r.set(key, "1", ex=ttl)
+    await r.set(f"{_base_key(phone)}:block", "1", ex=ttl)
 
 
-async def is_blocked(chat_id: str) -> bool:
+async def is_blocked(phone: str) -> bool:
     r = await get_redis()
-    key = f"BloquearAgente-{chat_id}--{settings.UAZAPI_INSTANCE}"
-    return await r.exists(key) == 1
+    return await r.exists(f"{_base_key(phone)}:block") == 1
 
 
 # --------------- buffer de mensagens (debounce) ---------------
 
 def _buffer_key(phone: str) -> str:
-    return f"{phone}--{settings.UAZAPI_INSTANCE}-chat-id"
+    return f"{_base_key(phone)}:buffer"
 
 
 async def push_buffer(phone: str, text: str) -> int:
@@ -51,7 +53,7 @@ async def delete_buffer(phone: str) -> None:
 # --------------- historico de chat (Gemini) ---------------
 
 def _history_key(phone: str) -> str:
-    return f"chat_history:{phone}--{settings.UAZAPI_INSTANCE}"
+    return f"{_base_key(phone)}:history"
 
 
 async def get_chat_history(phone: str) -> list[dict]:
@@ -75,7 +77,7 @@ async def clear_chat_history(phone: str) -> None:
 # --------------- leads ---------------
 
 def _lead_key(phone: str) -> str:
-    return f"lead:{phone}"
+    return f"{_base_key(phone)}:lead"
 
 
 async def get_lead(phone: str) -> dict | None:
@@ -90,7 +92,6 @@ async def create_lead(phone: str, name: str = "") -> dict:
         "phone": phone,
         "name": name,
         "status_conversa": "Novo",
-        "stage_follow_up": "0",
         "created_at": "",
     }
     await r.hset(_lead_key(phone), mapping=lead)
@@ -103,19 +104,6 @@ async def update_lead(phone: str, **fields) -> None:
         await r.hset(_lead_key(phone), mapping=fields)
 
 
-# --------------- follow-up ---------------
-
-async def schedule_follow_up(phone: str, timestamp: float, stage: int = 1) -> None:
+async def delete_lead(phone: str) -> None:
     r = await get_redis()
-    await r.zadd("follow_ups", {phone: timestamp})
-    await update_lead(phone, status_conversa="Em andamento", stage_follow_up=str(stage))
-
-
-async def get_due_follow_ups(now: float) -> list[str]:
-    r = await get_redis()
-    return await r.zrangebyscore("follow_ups", "-inf", now)
-
-
-async def remove_follow_up(phone: str) -> None:
-    r = await get_redis()
-    await r.zrem("follow_ups", phone)
+    await r.delete(_lead_key(phone))

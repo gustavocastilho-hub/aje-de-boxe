@@ -5,8 +5,6 @@ Consome mensagens da fila, processa com Gemini e responde via UAZAPI.
 import asyncio
 import logging
 import re
-import time
-from datetime import datetime, timedelta
 
 from app.config import settings
 from app.images import MEDIA_DICT
@@ -19,6 +17,9 @@ logger = logging.getLogger(__name__)
 
 # Tipos de mensagem de texto
 TEXT_TYPES = {"ExtendedTextMessage", "Conversation", "ContactMessage", "ReactionMessage"}
+
+# Numeros que nao passam pelo debounce de mensagens
+DEBOUNCE_BYPASS = {"5511989887525"}
 
 
 # ---- helpers ----
@@ -65,11 +66,6 @@ def _parse_ai_response(text: str) -> tuple[list[dict], bool]:
     return parts, finalizado
 
 
-def _is_business_hours() -> bool:
-    now = datetime.now()
-    return 8 <= now.hour < 18 and now.weekday() < 6  # seg-sab, 8h-18h
-
-
 # ---- processamento principal ----
 
 async def _process_message(msg: dict) -> None:
@@ -82,17 +78,29 @@ async def _process_message(msg: dict) -> None:
 
     # B) Mensagem propria -> bloqueia agente por 1h
     if from_me:
-        await rds.set_block(chat_id)
+        await rds.set_block(phone)
         logger.info("Humano assumiu chat %s - agente bloqueado por 1h", chat_id)
         return
 
     # C) Verifica bloqueio ativo
-    if await rds.is_blocked(chat_id):
+    if await rds.is_blocked(phone):
         logger.info("Agente bloqueado para %s - ignorando", chat_id)
         return
 
     # D) Filtra grupos
     if _is_group(chat_id):
+        return
+
+    # D.1) Comando /reset - limpa historico, lead e buffer
+    if msg_type in TEXT_TYPES and (msg_text or "").strip().lower() == "/reset":
+        await rds.clear_chat_history(phone)
+        await rds.delete_lead(phone)
+        await rds.delete_buffer(phone)
+        logger.info("Reset solicitado para %s", phone)
+        try:
+            await uazapi.send_text(phone, "Conversa reiniciada.")
+        except Exception:
+            logger.exception("Erro ao confirmar reset para %s", phone)
         return
 
     # Cadastro de lead
@@ -150,7 +158,8 @@ async def _process_message(msg: dict) -> None:
         return
 
     # Primeira mensagem - espera debounce para acumular
-    await asyncio.sleep(settings.DEBOUNCE_SECONDS)
+    if phone not in DEBOUNCE_BYPASS:
+        await asyncio.sleep(settings.DEBOUNCE_SECONDS)
 
     # Pega todas as mensagens acumuladas
     messages = await rds.get_buffer(phone)
@@ -177,7 +186,7 @@ async def _process_message(msg: dict) -> None:
         return
 
     # H) Verifica bloqueio pos-IA
-    if await rds.is_blocked(chat_id):
+    if await rds.is_blocked(phone):
         logger.info("Humano assumiu durante processamento IA - descartando resposta para %s", phone)
         return
 
@@ -198,72 +207,13 @@ async def _process_message(msg: dict) -> None:
         except Exception:
             logger.exception("Erro ao enviar %s para %s", part["type"], phone)
 
-    # J) Pos-envio: finalizacao e follow-up
+    # J) Pos-envio: finalizacao
     if finalizado:
-        await rds.set_block(chat_id)
-        await rds.update_lead(phone, status_conversa="Finalizado", stage_follow_up="0")
-        await rds.remove_follow_up(phone)
+        await rds.set_block(phone)
+        await rds.update_lead(phone, status_conversa="Finalizado")
         logger.info("Conversa finalizada para %s", phone)
-    else:
-        if _is_business_hours():
-            # Follow-up em ~1h
-            follow_at = time.time() + 3600 + 540  # 1h09min
-            await rds.schedule_follow_up(phone, follow_at, stage=1)
-        else:
-            # Follow-up amanha as 8h + minutos aleatorios
-            tomorrow = datetime.now().replace(hour=8, minute=0, second=0) + timedelta(days=1)
-            import random
-            tomorrow = tomorrow + timedelta(minutes=random.randint(0, 30))
-            await rds.schedule_follow_up(phone, tomorrow.timestamp(), stage=1)
-
-
-async def _follow_up_worker() -> None:
-    """Verifica follow-ups pendentes a cada 60 segundos."""
-    while True:
-        try:
-            due = await rds.get_due_follow_ups(time.time())
-            for phone in due:
-                lead = await rds.get_lead(phone)
-                if not lead:
-                    await rds.remove_follow_up(phone)
-                    continue
-
-                chat_id = f"{phone}@s.whatsapp.net"
-                if await rds.is_blocked(chat_id):
-                    await rds.remove_follow_up(phone)
-                    continue
-
-                stage = int(lead.get("stage_follow_up", "0"))
-                if stage >= 2:
-                    await rds.remove_follow_up(phone)
-                    continue
-
-                follow_msg = (
-                    "Oi! Tudo bem? Vi que voce ficou interessado na AJE DE BOXE. "
-                    "Posso te ajudar com alguma duvida ou agendar sua aula experimental gratuita?"
-                )
-                try:
-                    ai_response = await gemini_chat(phone, f"[SISTEMA: Follow-up automatico. O lead nao respondeu. Envie uma mensagem curta e amigavel reengajando o lead. Nome: {lead.get('name', 'amigo')}]")
-                    if ai_response:
-                        parts, _ = _parse_ai_response(ai_response)
-                        for part in parts:
-                            if part["type"] == "text":
-                                await uazapi.send_text(phone, part["content"])
-                    else:
-                        await uazapi.send_text(phone, follow_msg)
-                except Exception:
-                    logger.exception("Erro no follow-up para %s", phone)
-
-                await rds.remove_follow_up(phone)
-                await rds.update_lead(phone, stage_follow_up=str(stage + 1))
-
-        except Exception:
-            logger.exception("Erro no follow-up worker")
-
-        await asyncio.sleep(60)
 
 
 async def start_consumer() -> None:
-    """Inicia o consumer RabbitMQ e o follow-up worker."""
-    asyncio.create_task(_follow_up_worker())
+    """Inicia o consumer RabbitMQ."""
     await consume(_process_message)
