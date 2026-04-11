@@ -35,3 +35,14 @@ jobs:
             ghcr.io/gustavocastilho-hub/aje-de-boxe:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Trigger Portainer redeploy
+        if: success()
+        env:
+          PORTAINER_WEBHOOK_URL: ${{ secrets.PORTAINER_WEBHOOK_URL }}
+        run: |
+          if [ -z "$PORTAINER_WEBHOOK_URL" ]; then
+            echo "PORTAINER_WEBHOOK_URL not set, skipping redeploy."
+            exit 0
+          fi
+          curl -fsSL -X POST "$PORTAINER_WEBHOOK_URL"
