@@ -1,3 +1,4 @@
+import json as _json
 import logging
 
 import httpx
@@ -23,11 +24,16 @@ def _headers() -> dict:
     }
 
 
+def _json_body(payload: dict) -> bytes:
+    """Serializa payload preservando UTF-8 (ç, á, é etc.) sem escape unicode."""
+    return _json.dumps(payload, ensure_ascii=False).encode("utf-8")
+
+
 async def send_text(number: str, text: str, delay: int = 4000) -> dict:
     url = f"{settings.UAZAPI_BASE_URL}/send/text"
     payload = {"number": number, "text": text, "delay": delay}
     client = _get_client()
-    resp = await client.post(url, json=payload, headers=_headers())
+    resp = await client.post(url, content=_json_body(payload), headers=_headers())
     resp.raise_for_status()
     logger.info("Texto enviado para %s", number)
     return resp.json()
@@ -37,7 +43,7 @@ async def _send_media(number: str, media_type: str, file_url: str, delay: int = 
     url = f"{settings.UAZAPI_BASE_URL}/send/media"
     payload = {"number": number, "type": media_type, "file": file_url, "delay": delay}
     client = _get_client()
-    resp = await client.post(url, json=payload, headers=_headers())
+    resp = await client.post(url, content=_json_body(payload), headers=_headers())
     resp.raise_for_status()
     logger.info("%s enviado para %s", media_type, number)
     return resp.json()

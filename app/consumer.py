@@ -304,8 +304,9 @@ async def _maybe_send_alert(phone: str, lead: dict, user_msg: str, ai_response: 
         return
 
     name = lead.get("name", "") or phone
-    if "aula experimental" in ai_response.lower():
-        motivo = "Lead quer agendar aula experimental"
+    resp_lower = ai_response.lower()
+    if "aula experimental" in resp_lower or "agendamento" in resp_lower or "excelente noticia" in resp_lower:
+        motivo = "Lead quer agendar aula experimental gratuita 🥊"
     else:
         motivo = user_msg.strip()[:120]
     alert_text = (
