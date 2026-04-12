@@ -56,8 +56,12 @@ def _err(text: str) -> str:
     return f'<span style="color:#e74c3c"><b>❌ ERRO</b></span> {text}'
 
 
+def _strip_html(text: str) -> str:
+    return re.sub(r"<[^>]+>", "", text)
+
+
 def log(line: str) -> None:
-    logger.info(line)
+    logger.info(_strip_html(line))
     _session_log.append(line)
 
 
@@ -227,9 +231,10 @@ async def _process_message(msg: dict) -> None:
     # G) Processamento com IA (com retry)
     ai_response = ""
     last_error = ""
+    token_count = 0
     for attempt in range(6):
         try:
-            ai_response = await gemini_chat(phone, unified_msg, lead.get("name", ""))
+            ai_response, token_count = await gemini_chat(phone, unified_msg, lead.get("name", ""))
         except Exception as e:
             last_error = str(e)
             log(_err(f"[LLM] Tentativa {attempt + 1}/6: {e}"))
@@ -255,6 +260,8 @@ async def _process_message(msg: dict) -> None:
     # I) Parsing e envio
     parts, finalizado = _parse_ai_response(ai_response)
     log(_ai(f"[{phone}] {ai_response[:400]}"))
+    if token_count:
+        log(_ok(f"[LLM] Tokens consumidos: {token_count}"))
 
     sent_count = 0
     for i, part in enumerate(parts):
@@ -297,7 +304,10 @@ async def _maybe_send_alert(phone: str, lead: dict, user_msg: str, ai_response: 
         return
 
     name = lead.get("name", "") or phone
-    motivo = user_msg.strip()[:120]
+    if "aula experimental" in ai_response.lower():
+        motivo = "Lead quer agendar aula experimental"
+    else:
+        motivo = user_msg.strip()[:120]
     alert_text = (
         f"\U0001f6a8 ATENDIMENTO HUMANO \U0001f6a8\n"
         f"Contato: {name} ({phone})\n"
