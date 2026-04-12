@@ -317,9 +317,12 @@ async def _maybe_send_alert(phone: str, lead: dict, user_msg: str, ai_response: 
     try:
         await uazapi.send_text(settings.ALERT_PHONE, alert_text)
         await rds.set_alert_sent(phone)
-        logger.info("Alerta enviado para %s sobre lead %s", settings.ALERT_PHONE, phone)
+        log(_ok(f"[{phone}] Alerta de atendimento humano enviado"))
+        _save_session_log(phone)
     except Exception as e:
+        log(_err(f"[{phone}] Falha ao enviar alerta de atendimento humano: {e}"))
         logger.exception("Erro ao enviar alerta de atendimento humano: %s", e)
+        _save_session_log(phone)
 
 
 async def _update_summary_and_sheets(phone: str, name: str) -> None:
@@ -336,7 +339,9 @@ async def _update_summary_and_sheets(phone: str, name: str) -> None:
             resumo=resumo,
         )
     except Exception as e:
+        log(_err(f"[{phone}] Erro ao atualizar resumo/sheets: {e}"))
         logger.exception("Erro ao atualizar resumo/sheets para %s: %s", phone, e)
+        _save_session_log(phone)
 
 
 async def start_consumer() -> None:
