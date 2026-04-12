@@ -231,10 +231,10 @@ async def _process_message(msg: dict) -> None:
     # G) Processamento com IA (com retry)
     ai_response = ""
     last_error = ""
-    token_count = 0
+    tokens = (0, 0, 0)
     for attempt in range(6):
         try:
-            ai_response, token_count = await gemini_chat(phone, unified_msg, lead.get("name", ""))
+            ai_response, tokens = await gemini_chat(phone, unified_msg, lead.get("name", ""))
         except Exception as e:
             last_error = str(e)
             log(_err(f"[LLM] Tentativa {attempt + 1}/6: {e}"))
@@ -260,8 +260,8 @@ async def _process_message(msg: dict) -> None:
     # I) Parsing e envio
     parts, finalizado = _parse_ai_response(ai_response)
     log(_ai(f"[{phone}] {ai_response[:400]}"))
-    if token_count:
-        log(_ok(f"[LLM] Tokens consumidos: {token_count}"))
+    if tokens[2]:
+        log(f"[TOKENS] Entrada: {tokens[0]} | Sa\u00edda: {tokens[1]} | Total: {tokens[2]}")
 
     sent_count = 0
     for i, part in enumerate(parts):

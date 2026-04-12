@@ -19,7 +19,7 @@ def _ensure_configured() -> None:
         _configured = True
 
 
-async def chat(phone: str, user_message: str, lead_name: str = "") -> tuple[str, int]:
+async def chat(phone: str, user_message: str, lead_name: str = "") -> tuple[str, tuple[int, int, int]]:
     _ensure_configured()
 
     history = await get_chat_history(phone)
@@ -33,15 +33,18 @@ async def chat(phone: str, user_message: str, lead_name: str = "") -> tuple[str,
     response = chat_session.send_message(user_message)
     ai_text = response.text.strip() if response.text else ""
 
-    token_count = 0
+    tokens = (0, 0, 0)
     if hasattr(response, "usage_metadata") and response.usage_metadata:
-        token_count = response.usage_metadata.total_token_count or 0
+        meta = response.usage_metadata
+        inp = meta.prompt_token_count or 0
+        out = meta.candidates_token_count or 0
+        tokens = (inp, out, meta.total_token_count or inp + out)
 
     await append_chat_history(phone, "user", user_message)
     if ai_text:
         await append_chat_history(phone, "model", ai_text)
 
-    return ai_text, token_count
+    return ai_text, tokens
 
 
 async def transcribe_audio(audio_bytes: bytes) -> str:
