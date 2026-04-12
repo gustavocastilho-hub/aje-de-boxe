@@ -23,9 +23,9 @@ def _headers() -> dict:
     }
 
 
-async def send_text(number: str, text: str) -> dict:
+async def send_text(number: str, text: str, delay: int = 4000) -> dict:
     url = f"{settings.UAZAPI_BASE_URL}/send/text"
-    payload = {"number": number, "text": text}
+    payload = {"number": number, "text": text, "delay": delay}
     client = _get_client()
     resp = await client.post(url, json=payload, headers=_headers())
     resp.raise_for_status()
@@ -33,9 +33,9 @@ async def send_text(number: str, text: str) -> dict:
     return resp.json()
 
 
-async def _send_media(number: str, media_type: str, file_url: str) -> dict:
+async def _send_media(number: str, media_type: str, file_url: str, delay: int = 4000) -> dict:
     url = f"{settings.UAZAPI_BASE_URL}/send/media"
-    payload = {"number": number, "type": media_type, "file": file_url}
+    payload = {"number": number, "type": media_type, "file": file_url, "delay": delay}
     client = _get_client()
     resp = await client.post(url, json=payload, headers=_headers())
     resp.raise_for_status()

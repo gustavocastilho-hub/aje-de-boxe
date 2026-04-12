@@ -1,5 +1,4 @@
 import json
-import time
 import redis.asyncio as redis
 
 from app.config import settings
@@ -132,19 +131,3 @@ async def update_lead(phone: str, **fields) -> None:
 async def delete_lead(phone: str) -> None:
     r = await get_redis()
     await r.delete(_lead_key(phone))
-
-
-# --------------- log de execucoes do worker ---------------
-
-_EXEC_LOG_KEY = "aje:logs"
-_EXEC_LOG_MAX = 500
-
-
-async def append_execution_log(phone: str, lines: list[str]) -> None:
-    r = await get_redis()
-    entry = json.dumps(
-        {"phone": phone, "ts": time.strftime("%Y-%m-%dT%H:%M:%S"), "lines": lines},
-        ensure_ascii=False,
-    )
-    await r.lpush(_EXEC_LOG_KEY, entry)
-    await r.ltrim(_EXEC_LOG_KEY, 0, _EXEC_LOG_MAX - 1)

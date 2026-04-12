@@ -3,8 +3,12 @@ Fluxo 2: RabbitMQ -> IA -> Resposta WhatsApp
 Consome mensagens da fila, processa com Gemini e responde via UAZAPI.
 """
 import asyncio
+import json
 import logging
 import re
+import time
+
+import redis as redis_sync
 
 from app.config import settings
 from app.images import MEDIA_DICT
@@ -21,6 +25,33 @@ TEXT_TYPES = {"ExtendedTextMessage", "Conversation", "ContactMessage", "Reaction
 
 # Numeros que nao passam pelo debounce de mensagens
 DEBOUNCE_BYPASS = {"5511989887525"}
+
+# --- LOG DE SESSAO (mesmo padrao do mya-disparo) ---
+_LOG_KEY = "aje:logs"
+try:
+    _log_redis = redis_sync.Redis.from_url(settings.redis_url, decode_responses=True)
+    _log_redis.ping()
+except Exception:
+    _log_redis = None
+
+_session_log: list[str] = []
+
+
+def log(msg: str) -> None:
+    logger.info(msg)
+    _session_log.append(str(msg))
+
+
+def _save_session_log(phone: str) -> None:
+    global _session_log
+    if _log_redis and _session_log:
+        entry = json.dumps(
+            {"ts": time.time(), "phone": phone, "lines": list(_session_log)},
+            ensure_ascii=False,
+        )
+        _log_redis.lpush(_LOG_KEY, entry)
+        _log_redis.ltrim(_LOG_KEY, 0, 499)
+    _session_log = []
 
 
 # ---- helpers ----
@@ -76,7 +107,6 @@ async def _process_message(msg: dict) -> None:
     msg_type = msg.get("msg_type", "")
     msg_text = msg.get("msg", "")
     push_name = msg.get("push_name", "")
-    _log: list[str] = []
 
     # A) Descarta mensagens invalidas / nao suportadas
     if not phone or msg_type in ("", "Unknown"):
@@ -103,11 +133,12 @@ async def _process_message(msg: dict) -> None:
         await rds.clear_chat_history(phone)
         await rds.delete_lead(phone)
         await rds.delete_buffer(phone)
-        logger.info("Reset solicitado para %s", phone)
+        log(f"[{phone}] Reset solicitado")
         try:
             await uazapi.send_text(phone, "Conversa reiniciada.")
         except Exception:
             logger.exception("Erro ao confirmar reset para %s", phone)
+        _save_session_log(phone)
         return
 
     # Cadastro de lead
@@ -157,7 +188,6 @@ async def _process_message(msg: dict) -> None:
     count = await rds.push_buffer(phone, buffer_text)
 
     if count > 1:
-        # Outra execucao ja esta esperando
         logger.info("Buffer ja ativo para %s (count=%d) - saindo", phone, count)
         return
 
@@ -170,8 +200,7 @@ async def _process_message(msg: dict) -> None:
     await rds.delete_buffer(phone)
 
     unified_msg = "\n".join(messages)
-    logger.info("Mensagem unificada de %s: %s", phone, unified_msg[:100])
-    _log.append(f"MSG: {unified_msg[:200]}")
+    log(f"[{phone} - {push_name}] Mensagem: {unified_msg[:200]}")
 
     # G) Processamento com IA (com retry)
     ai_response = ""
@@ -187,9 +216,8 @@ async def _process_message(msg: dict) -> None:
         await asyncio.sleep(2)
 
     if not ai_response:
-        logger.error("Gemini retornou vazio apos 6 tentativas para %s", phone)
-        _log.append("ERRO: Gemini retornou vazio apos 6 tentativas")
-        asyncio.create_task(rds.append_execution_log(phone, _log))
+        log(f"[{phone}] ERRO: Gemini retornou vazio apos 6 tentativas")
+        _save_session_log(phone)
         return
 
     # H) Verifica bloqueio pos-IA
@@ -199,12 +227,10 @@ async def _process_message(msg: dict) -> None:
 
     # I) Parsing e envio
     parts, finalizado = _parse_ai_response(ai_response)
-    _log.append(f"IA: {ai_response[:300]}")
+    log(f"[{phone}] IA: {ai_response[:300]}")
 
     sent_count = 0
     for i, part in enumerate(parts):
-        if i > 0:
-            await asyncio.sleep(4)  # delay entre mensagens consecutivas
         try:
             if part["type"] == "text":
                 await uazapi.send_text(phone, part["content"])
@@ -216,11 +242,10 @@ async def _process_message(msg: dict) -> None:
             elif part["type"] == "video":
                 await uazapi.send_video(phone, part["content"])
             sent_count += 1
+            log(f"[{i+1}/{len(parts)}] Parte enviada ({part['type']})")
         except Exception:
             logger.exception("Erro ao enviar %s para %s", part["type"], phone)
-            _log.append(f"ERRO ao enviar parte {i + 1} ({part['type']})")
-
-    _log.append(f"ENVIADO: {sent_count}/{len(parts)} partes")
+            log(f"ERRO ao enviar parte {i+1} ({part['type']})")
 
     # J) Alerta de atendimento humano
     asyncio.create_task(_maybe_send_alert(phone, lead, unified_msg, ai_response))
@@ -229,11 +254,11 @@ async def _process_message(msg: dict) -> None:
     if finalizado:
         await rds.set_block(phone)
         await rds.update_lead(phone, status_conversa="Finalizado")
-        logger.info("Conversa finalizada para %s", phone)
-        _log.append("STATUS: Conversa finalizada")
+        log(f"[{phone}] Conversa finalizada")
 
     asyncio.create_task(_update_summary_and_sheets(phone, lead.get("name", "")))
-    asyncio.create_task(rds.append_execution_log(phone, _log))
+
+    _save_session_log(phone)
 
 
 async def _maybe_send_alert(phone: str, lead: dict, user_msg: str, ai_response: str) -> None:
