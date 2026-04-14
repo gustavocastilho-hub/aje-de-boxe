@@ -284,15 +284,15 @@ async def _process_message(msg: dict) -> None:
             logger.exception("Erro ao enviar %s para %s", part["type"], phone)
 
     # J) Alerta de atendimento humano
-    asyncio.create_task(_maybe_send_alert(phone, lead, unified_msg, ai_response))
+    await _maybe_send_alert(phone, lead, unified_msg, ai_response)
 
-    # K) Pos-envio: finalizacao + resumo em background
+    # K) Pos-envio: finalizacao + resumo
     if finalizado:
         await rds.set_block(phone)
         await rds.update_lead(phone, status_conversa="Finalizado")
         log(_ok(f"[{phone}] Conversa marcada como finalizada"))
 
-    asyncio.create_task(_update_summary_and_sheets(phone, lead.get("name", "")))
+    await _update_summary_and_sheets(phone, lead.get("name", ""))
 
     _save_session_log(phone)
 
@@ -334,11 +334,9 @@ async def _maybe_send_alert(phone: str, lead: dict, user_msg: str, ai_response: 
         await uazapi.send_text(settings.ALERT_PHONE, alert_text)
         await rds.set_alert_sent(phone)
         log(_ok(f"[TOOL ALERTA_EQUIPE] Resultado: SUCESSO - equipe notificada sobre {phone}"))
-        _save_session_log(phone)
     except Exception as e:
         log(_err(f"[TOOL ALERTA_EQUIPE] Resultado: FALHA - {e}"))
         logger.exception("Erro ao enviar alerta de atendimento humano: %s", e)
-        _save_session_log(phone)
 
 
 async def _update_summary_and_sheets(phone: str, name: str) -> None:
@@ -368,8 +366,6 @@ async def _update_summary_and_sheets(phone: str, name: str) -> None:
     except Exception as e:
         log(_err(f"[TOOL SHEETS] Resultado: EXCECAO - {e}"))
         logger.exception("Erro ao atualizar sheets para %s: %s", phone, e)
-    finally:
-        _save_session_log(phone)
 
 
 async def start_consumer() -> None:
