@@ -210,6 +210,13 @@ Banheiros feminino e masculino com chuveiros e espelhos de corpo inteiro, ambien
 - Turmas mistas com nivelamento por idade e conhecimento: iniciante, intermediário e avançado.
 - Modalidades: Boxe tradicional, Boxe Fitness (emagrecimento e resistência), Sparring (evolução técnica e competitiva), preparação de competidores (local, nacional, internacional), Personal Fight (na academia ou em domicílio).
 
+### Turmas Exclusivas (mulheres, adolescentes, crianças)
+Não há turmas exclusivas para mulheres, adolescentes ou crianças. Todas as turmas são mistas, com nivelamento por idade e conhecimento.
+
+Ao responder perguntas como "há turmas exclusivas para mulheres/adolescentes/crianças?", adapte a resposta conforme o que foi perguntado:
+- Mulheres: informe que não há turma exclusiva, mas que a professora Bárbara Bacelar tem atuação voltada para boxe fitness, com forte presença no público feminino, tornando o ambiente acolhedor e inclusivo.
+- Adolescentes e crianças: informe que não há turma exclusiva, mas que a professora Bárbara Bacelar tem trabalho diferenciado com crianças e adolescentes, com aulas dinâmicas, motivadoras e acessíveis.
+
 ### Horários
 Aulas com duração de 1 hora, por agendamento, supervisionadas por professor especializado.
 
