@@ -62,6 +62,12 @@ async def webhook(request: Request):
         )
         return {"status": "ignored", "reason": "no phone or unsupported message"}
 
+    # Whitelist: se ALLOWED_PHONES tiver numeros, so processa os listados
+    allowed = settings.allowed_phones_list
+    if allowed and phone not in allowed:
+        logger.info("Mensagem de %s ignorada (fora da whitelist ALLOWED_PHONES)", phone)
+        return {"status": "ignored", "reason": "phone not in whitelist"}
+
     queue_message = {
         "phone": phone,
         "push_name": push_name,

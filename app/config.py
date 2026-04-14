@@ -39,6 +39,16 @@ class Settings(BaseSettings):
     # Formato: somente dígitos, com DDI (ex: 5511999990000)
     ALERT_PHONE: str = "5511989887525"
 
+    # Whitelist de números que a IA pode responder.
+    # Formato: DDI+DDD+número (somente dígitos), separados por vírgula.
+    # Exemplo: "5511999990000,5521988887777"
+    # Se vazio, a IA responde para todos os números.
+    ALLOWED_PHONES: str = ""
+
+    @property
+    def allowed_phones_list(self) -> list[str]:
+        return [p.strip() for p in self.ALLOWED_PHONES.split(",") if p.strip()]
+
     @property
     def rabbitmq_url(self) -> str:
         user = quote(self.RABBITMQ_USER, safe="")
